@@ -1,18 +1,9 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+import streamlit as st
 import numpy as np
 import datetime as dt
+import plotly.graph_objects as go
 
-app = FastAPI(title="Laser Health Mockup (Single File)")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+st.set_page_config(page_title="Laser Health (Mockup)", layout="wide")
 
 def generate_mock_forecast(periods: int = 30):
     np.random.seed(42)
@@ -56,107 +47,57 @@ def generate_mock_forecast(periods: int = 30):
         },
     }
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+# --- UI ---
+st.title("Laser Health Dashboard — Mockup")
+data = generate_mock_forecast(periods=30)
 
-@app.get("/forecast")
-def forecast(periods: int = 30):
-    return JSONResponse(generate_mock_forecast(periods=periods))
+col1, col2 = st.columns([1, 2], gap="large")
 
-@app.get("/", response_class=HTMLResponse)
-def index():
-    return HTMLResponse(f"""
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Laser Health Dashboard (Mockup)</title>
-  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <style>
-    body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; }}
-    .wrap {{ max-width: 1100px; margin: 0 auto; padding: 24px; }}
-    .cards {{ display: grid; grid-template-columns: 360px 1fr; gap: 24px; align-items: start; }}
-    .card {{ border: 1px solid #eaeaea; border-radius: 12px; padding: 16px; }}
-    h1 {{ margin: 0 0 8px 0; }}
-    h3 {{ margin: 0 0 12px 0; }}
-    .muted {{ opacity: .7; }}
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <header style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-      <h1>Laser Health Dashboard</h1>
-      <div id="machine" class="muted"></div>
-    </header>
+with col1:
+    st.subheader("Overall Health")
+    gauge = go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=data["health_score"],
+            title={"text": "Health"},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "black"},
+                "steps": [
+                    {"range": [0, 40], "color": "#fde0dc"},
+                    {"range": [40, 70], "color": "#fff3cd"},
+                    {"range": [70, 100], "color": "#e6f4ea"},
+                ],
+            },
+            number={"suffix": ""},
+        )
+    )
+    gauge.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=260)
+    st.plotly_chart(gauge, use_container_width=True)
+    st.caption("Mock score from recent trend & volatility. Tune thresholds to trigger maintenance.")
 
-    <section class="cards">
-      <div class="card">
-        <h3>Overall Health</h3>
-        <div id="gauge" style="width:100%;height:260px;"></div>
-        <p class="muted">Mock score from recent trend & volatility. Tune thresholds to trigger maintenance.</p>
-      </div>
+with col2:
+    st.subheader("Time Series + Forecast")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=data["history"]["dates"], y=data["history"]["values"], name="Actual", mode="lines"))
+    fig.add_trace(go.Scatter(x=data["fitted"]["dates"], y=data["fitted"]["values"], name="Smoothed", mode="lines"))
+    fig.add_trace(go.Scatter(x=data["forecast"]["dates"], y=data["forecast"]["upper"], name="Upper", mode="lines", line=dict(dash="dot")))
+    fig.add_trace(go.Scatter(x=data["forecast"]["dates"], y=data["forecast"]["lower"], name="Lower", mode="lines", line=dict(dash="dot"), fill="tonexty"))
+    fig.add_trace(go.Scatter(x=data["forecast"]["dates"], y=data["forecast"]["mean"], name="Forecast", mode="lines"))
+    fig.update_layout(
+        margin=dict(l=20, r=20, t=10, b=20),
+        xaxis_title="Date",
+        yaxis_title="Signal",
+        height=440
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-      <div class="card">
-        <h3>Time Series + Forecast</h3>
-        <div id="ts" style="width:100%;height:440px;"></div>
-      </div>
-    </section>
-  </div>
+st.sidebar.header("Machine")
+st.sidebar.write(f"**ID:** {data['machine_id']}")
+st.sidebar.write(f"**Health:** {data['health_score']}/100")
 
-  <script>
-    async function load() {{
-      const res = await fetch('/forecast')
-      const data = await res.json()
-      document.getElementById('machine').innerHTML = 'Machine: <strong>' + data.machine_id + '</strong>'
-
-      const gaugeData = [{{
-        type: "indicator",
-        mode: "gauge+number",
-        value: data.health_score,
-        title: {{ text: "Health" }},
-        gauge: {{
-          axis: {{ range: [0, 100] }},
-          steps: [
-            {{ range: [0, 40], color: "#fde0dc" }},
-            {{ range: [40, 70], color: "#fff3cd" }},
-            {{ range: [70, 100], color: "#e6f4ea" }}
-          ]
-        }}
-      }}]
-      Plotly.newPlot('gauge', gaugeData, {{ margin: {{ t: 10, b: 10 }} }}, {{ displayModeBar: false }})
-
-      const hist = {{
-        x: data.history.dates, y: data.history.values, type: 'scatter', mode: 'lines', name: 'Actual'
-      }}
-      const smoothed = {{
-        x: data.fitted.dates, y: data.fitted.values, type: 'scatter', mode: 'lines', name: 'Smoothed'
-      }}
-      const upper = {{
-        x: data.forecast.dates, y: data.forecast.upper, type: 'scatter', mode: 'lines', name: 'Upper', line: {{ dash: 'dot' }}
-      }}
-      const lower = {{
-        x: data.forecast.dates, y: data.forecast.lower, type: 'scatter', mode: 'lines', name: 'Lower', fill: 'tonexty', line: {{ dash: 'dot' }}
-      }}
-      const mean = {{
-        x: data.forecast.dates, y: data.forecast.mean, type: 'scatter', mode: 'lines', name: 'Forecast'
-      }}
-
-      Plotly.newPlot('ts', [hist, smoothed, upper, lower, mean], {{
-        margin: {{ l: 40, r: 20, t: 10, b: 40 }},
-        xaxis: {{ title: 'Date' }},
-        yaxis: {{ title: 'Signal' }}
-      }}, {{ displayModeBar: false, responsive: true }})
-    }}
-    load().catch(err => {{
-      document.body.innerHTML = '<pre style="color:red;padding:24px;">' + String(err) + '</pre>'
-    }})
-  </script>
-</body>
-</html>
-""")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+st.sidebar.header("Controls")
+periods = st.sidebar.slider("Forecast periods (days)", 7, 60, 30, step=1)
+if st.sidebar.button("Recompute"):
+    data = generate_mock_forecast(periods=periods)
+    st.experimental_rerun()
