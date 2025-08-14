@@ -1,2 +1,3 @@
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install streamlit plotly numpy
+streamlit==1.38.0
+plotly==5.24.1
+numpy==2.0.1
